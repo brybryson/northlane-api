@@ -13,6 +13,9 @@ router.post("/chat", async (req, res) => {
       return;
     }
 
+    // Artificial response delay (750ms) to simulate natural AI typing & throttle rapid traffic bursts
+    await new Promise((resolve) => setTimeout(resolve, 750));
+
     const response = await processAssistantChat({
       message,
       sessionId: sessionId || "session-anonymous",
