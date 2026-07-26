@@ -27,6 +27,20 @@ app.use(express.json());
 import aiRouter from "./routes/ai.js";
 app.use("/api/ai", aiRouter);
 
+// Root Welcome Route
+app.get("/", (req, res) => {
+  res.json({
+    name: "Northlane Studio API Service",
+    status: "online",
+    version: "1.0.0",
+    endpoints: {
+      health: "GET /health",
+      aiChat: "POST /api/ai/chat"
+    },
+    timestamp: new Date()
+  });
+});
+
 // Health Check Route
 app.get("/health", (req, res) => {
   res.json({ status: "ok", service: "northlane-api", timestamp: new Date() });
