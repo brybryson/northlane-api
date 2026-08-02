@@ -96,7 +96,7 @@ export async function processAssistantChat(payload: AssistantRequest): Promise<A
     
     // Offline simulation backup responder if API key is invalid or offline
     if (matchingProducts.length > 0) {
-      rawLlmReply = `I highly recommend looking at our premium workspace collection. The ${matchingProducts[0].name} (₱${matchingProducts[0].price.toLocaleString()}) would be an excellent fit for your needs because it is carefully engineered for active focus and premium ergonomics.`;
+      rawLlmReply = `I highly recommend looking at our premium workspace collection. The ${matchingProducts[0].name} ($${matchingProducts[0].price.toLocaleString()}) would be an excellent fit for your needs because it is carefully engineered for active focus and premium ergonomics.`;
     } else {
       rawLlmReply = "We don't currently carry that specific item. I've recorded your inquiry so our sourcing team can better understand what workspace items customers are looking for. In the meantime, I can help you find mechanical keyboards, audio monitors, desks, or ergonomic chairs!";
     }

@@ -28,7 +28,7 @@ export function buildUserPrompt(userMessage: string, matchingProducts: CatalogPr
     productContext += "No direct matches found in current catalog category.\n";
   } else {
     matchingProducts.forEach(p => {
-      productContext += `- ID: ${p.id} | Name: ${p.name} | Price: ₱${p.price.toLocaleString()} | Category: ${p.category} | Rating: ${p.rating} | Brand: ${p.brand}\n`;
+      productContext += `- ID: ${p.id} | Name: ${p.name} | Price: $${p.price.toLocaleString()} | Category: ${p.category} | Rating: ${p.rating} | Brand: ${p.brand}\n`;
       productContext += `  Description: ${p.description}\n`;
       productContext += `  Specifications: ${JSON.stringify(p.specs)}\n\n`;
     });
