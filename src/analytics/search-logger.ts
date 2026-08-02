@@ -21,6 +21,11 @@ function getSupabaseClient() {
 
 const supabase = getSupabaseClient();
 
+// Helper to validate if a string is a valid UUID
+function isValidUUID(uuid: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(uuid);
+}
+
 export interface SearchLogPayload {
   query: string;
   intent: string;
@@ -43,7 +48,7 @@ export async function logSearchQuery(payload: SearchLogPayload): Promise<void> {
         intent: payload.intent,
         matched: payload.matched,
         matched_products: payload.matchedProducts,
-        user_id: payload.userId || null
+        user_id: payload.userId && isValidUUID(payload.userId) ? payload.userId : null
       });
 
     if (error) {
@@ -53,5 +58,60 @@ export async function logSearchQuery(payload: SearchLogPayload): Promise<void> {
     }
   } catch (err: any) {
     console.error("[SearchLogger] Exception during database log insert:", err.message);
+  }
+}
+
+export async function logConversationMessage(payload: {
+  sessionId: string;
+  userId?: string | null;
+  userMessage: string;
+  aiMessage: string;
+  intent: string;
+}): Promise<void> {
+  if (!supabase) return;
+
+  try {
+    let { data: convData } = await supabase
+      .from("ai_conversations")
+      .select("id")
+      .eq("session_id", payload.sessionId)
+      .limit(1)
+      .maybeSingle();
+
+    let conversationId = convData?.id;
+
+    if (!conversationId) {
+      const { data: newConv, error: createError } = await supabase
+        .from("ai_conversations")
+        .insert({ session_id: payload.sessionId, user_id: payload.userId && isValidUUID(payload.userId) ? payload.userId : null })
+        .select()
+        .single();
+      
+      if (createError) {
+        console.error("[SearchLogger] Error creating conversation:", createError.message);
+        return;
+      }
+      conversationId = newConv.id;
+    }
+
+    if (conversationId) {
+      await supabase.from("ai_messages").insert([
+        {
+          conversation_id: conversationId,
+          role: "user",
+          content: payload.userMessage,
+          intent: payload.intent
+        },
+        {
+          conversation_id: conversationId,
+          role: "assistant",
+          content: payload.aiMessage,
+          intent: payload.intent
+        }
+      ]);
+      console.log(`[SearchLogger] Logged conversation messages for session: ${payload.sessionId}`);
+    }
+  } catch (err: any) {
+    console.error("[SearchLogger] Exception during conversation logging:", err.message);
   }
 }

@@ -3,7 +3,7 @@ import { searchProducts, CatalogProduct } from "../integrations/woocommerce.js";
 import { buildSystemPrompt, buildUserPrompt } from "./prompt-builder.js";
 import { groq } from "./groq.js";
 import { validateResponse } from "./response-validator.js";
-import { logSearchQuery } from "../analytics/search-logger.js";
+import { logSearchQuery, logConversationMessage } from "../analytics/search-logger.js";
 
 export interface AssistantRequest {
   message: string;
@@ -41,6 +41,15 @@ export async function processAssistantChat(payload: AssistantRequest): Promise<A
       matched: false,
       matchedProducts: [],
       userId
+    });
+
+    // Log the conversation
+    logConversationMessage({
+      sessionId: payload.sessionId,
+      userId,
+      userMessage: message,
+      aiMessage: fallbackReply,
+      intent
     });
 
     return {
@@ -89,6 +98,15 @@ export async function processAssistantChat(payload: AssistantRequest): Promise<A
     matched: products.length > 0,
     matchedProducts: products.map(p => ({ id: p.id, name: p.name, price: p.price })),
     userId
+  });
+
+  // 8. Log the conversation message
+  logConversationMessage({
+    sessionId: payload.sessionId,
+    userId,
+    userMessage: message,
+    aiMessage: reply,
+    intent
   });
 
   return {
