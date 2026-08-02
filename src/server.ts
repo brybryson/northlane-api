@@ -23,9 +23,13 @@ app.use(cors({
 
 app.use(express.json());
 
-// Register AI Sourcing Concierge Routes
+// Register API Routes
 import aiRouter from "./routes/ai.js";
+import paymentRouter from "./routes/payment.js";
+import automationRouter from "./routes/automation.js";
 app.use("/api/ai", aiRouter);
+app.use("/api/payment", paymentRouter);
+app.use("/api/automation", automationRouter);
 
 // Root Welcome Route
 app.get("/", (req, res) => {
