@@ -1,3 +1,14 @@
+import dotenv from "dotenv";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+dotenv.config();
+dotenv.config({ path: path.resolve(__dirname, "../../.env") });
+dotenv.config({ path: path.resolve(process.cwd(), "northlane-api/.env") });
+
 export interface CatalogProduct {
   id: string;
   name: string;
@@ -13,7 +24,7 @@ export interface CatalogProduct {
   specs: Record<string, string>;
 }
 
-// Replica of key products for the backend concierge search
+// Replica of key products for the backend concierge search fallback
 export const BACKEND_PRODUCTS: CatalogProduct[] = [
   {
     id: "kb-01",
@@ -138,7 +149,51 @@ export const BACKEND_PRODUCTS: CatalogProduct[] = [
   }
 ];
 
+/**
+ * Fetches products from live Headless WooCommerce REST API if configured
+ */
+export async function fetchLiveWooCommerceProducts(): Promise<CatalogProduct[] | null> {
+  const url = process.env.WOOCOMMERCE_URL;
+  const key = process.env.WOOCOMMERCE_CONSUMER_KEY;
+  const secret = process.env.WOOCOMMERCE_CONSUMER_SECRET;
+
+  if (!url || !key || !secret) {
+    return null; // Fallback to local catalog replica
+  }
+
+  try {
+    const authHeader = "Basic " + Buffer.from(`${key}:${secret}`).toString("base64");
+    const response = await fetch(`${url}/wp-json/wc/v3/products?per_page=50`, {
+      headers: { Authorization: authHeader },
+    });
+
+    if (!response.ok) return null;
+
+    const data = await response.json();
+    return data.map((item: any) => ({
+      id: String(item.id),
+      name: item.name,
+      subtitle: item.short_description ? item.short_description.replace(/<[^>]*>?/gm, "") : "Studio Workspace Essential",
+      category: item.categories?.[0]?.name || "Workspace",
+      brand: "Northlane Studio",
+      price: parseFloat(item.price || "0"),
+      rating: parseFloat(item.average_rating || "4.8"),
+      img: item.images?.[0]?.src || BACKEND_PRODUCTS[0].img,
+      description: item.description ? item.description.replace(/<[^>]*>?/gm, "") : "",
+      inStock: item.stock_status === "instock",
+      featured: item.featured || false,
+      specs: { SKU: item.sku || `SKU-${item.id}` },
+    }));
+  } catch (err) {
+    console.error("[WooCommerce REST API Sync Error]:", err);
+    return null;
+  }
+}
+
 export async function searchProducts(query: string): Promise<CatalogProduct[]> {
+  const liveWooProducts = await fetchLiveWooCommerceProducts();
+  const productSource = liveWooProducts || BACKEND_PRODUCTS;
+
   const stopWords = new Set(["i", "need", "a", "to", "for", "the", "in", "under", "want", "find", "me", "show", "is", "of", "what", "are", "do", "you", "carry"]);
   const words = query
     .toLowerCase()
@@ -148,7 +203,7 @@ export async function searchProducts(query: string): Promise<CatalogProduct[]> {
 
   if (words.length === 0) return [];
 
-  return BACKEND_PRODUCTS.filter(p => {
+  return productSource.filter(p => {
     return words.some(word => 
       p.name.toLowerCase().includes(word) ||
       p.category.toLowerCase().includes(word) ||
@@ -159,16 +214,22 @@ export async function searchProducts(query: string): Promise<CatalogProduct[]> {
 }
 
 export async function getProductById(id: string): Promise<CatalogProduct | null> {
-  return BACKEND_PRODUCTS.find(p => p.id === id) || null;
+  const live = await fetchLiveWooCommerceProducts();
+  const source = live || BACKEND_PRODUCTS;
+  return source.find(p => p.id === id) || null;
 }
 
 export async function getProductsByCategory(category: string): Promise<CatalogProduct[]> {
+  const live = await fetchLiveWooCommerceProducts();
+  const source = live || BACKEND_PRODUCTS;
   const lower = category.toLowerCase();
-  return BACKEND_PRODUCTS.filter(p => p.category.toLowerCase() === lower);
+  return source.filter(p => p.category.toLowerCase() === lower);
 }
 
 export async function getFeaturedProducts(): Promise<CatalogProduct[]> {
-  return BACKEND_PRODUCTS.filter(p => p.featured);
+  const live = await fetchLiveWooCommerceProducts();
+  const source = live || BACKEND_PRODUCTS;
+  return source.filter(p => p.featured);
 }
 
 export async function getProductSpecifications(id: string): Promise<Record<string, string>> {
