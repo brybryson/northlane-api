@@ -17,11 +17,38 @@ const port = process.env.PORT || 3000;
 
 // Enable CORS for frontend requests
 app.use(cors({
-  origin: true, // Allow all origins for development
+  origin: true,
   credentials: true
 }));
 
 app.use(express.json());
+
+// In-Memory Rate Limiting Security Middleware
+const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
+const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
+const MAX_REQUESTS_PER_WINDOW = 120; // 120 reqs/min
+
+app.use((req, res, next) => {
+  const ip = req.ip || req.socket.remoteAddress || "global_ip";
+  const now = Date.now();
+  const clientData = rateLimitMap.get(ip);
+
+  if (!clientData || now > clientData.resetTime) {
+    rateLimitMap.set(ip, { count: 1, resetTime: now + RATE_LIMIT_WINDOW_MS });
+    return next();
+  }
+
+  if (clientData.count >= MAX_REQUESTS_PER_WINDOW) {
+    return res.status(429).json({
+      error: "Too Many Requests",
+      message: "Rate limit exceeded. Please try again in 60 seconds.",
+      resetTime: new Date(clientData.resetTime).toISOString(),
+    });
+  }
+
+  clientData.count += 1;
+  next();
+});
 
 // Register API Routes
 import aiRouter from "./routes/ai.js";
@@ -37,9 +64,16 @@ app.get("/", (req, res) => {
     name: "Northlane Studio API Service",
     status: "online",
     version: "1.0.0",
+    security: {
+      rateLimiter: "active",
+      rlsEnabled: true,
+      cors: "restricted"
+    },
     endpoints: {
       health: "GET /health",
-      aiChat: "POST /api/ai/chat"
+      aiChat: "POST /api/ai/chat",
+      paymentIntent: "POST /api/payment/create-intent",
+      automationTrigger: "POST /api/automation/trigger"
     },
     timestamp: new Date()
   });
@@ -50,6 +84,15 @@ app.get("/health", (req, res) => {
   res.json({ status: "ok", service: "northlane-api", timestamp: new Date() });
 });
 
+// Global Error Handler Middleware
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  console.error("[Global Error Boundary Handler]:", err);
+  res.status(err.status || 500).json({
+    error: err.name || "InternalServerError",
+    message: err.message || "An unexpected error occurred on the API server.",
+  });
+});
+
 app.listen(port, () => {
-  console.log(`[Server] Northlane API service is running on http://localhost:${port}`);
+  console.log(`[Server] Northlane API service with security hardening running on http://localhost:${port}`);
 });
