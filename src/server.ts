@@ -54,9 +54,12 @@ app.use((req, res, next) => {
 import aiRouter from "./routes/ai.js";
 import paymentRouter from "./routes/payment.js";
 import automationRouter from "./routes/automation.js";
+import addressRouter from "./routes/address.js";
+
 app.use("/api/ai", aiRouter);
 app.use("/api/payment", paymentRouter);
 app.use("/api/automation", automationRouter);
+app.use("/api/addresses", addressRouter);
 
 // Root Welcome Route
 app.get("/", (req, res) => {

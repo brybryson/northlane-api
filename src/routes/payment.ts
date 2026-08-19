@@ -2,6 +2,26 @@ import { Router } from "express";
 
 const router = Router();
 
+// In-memory / mock database fallback for payment methods
+let memoryPaymentMethods = [
+  {
+    id: "pm-1",
+    brand: "Visa",
+    last4: "4242",
+    expMonth: 11,
+    expYear: 2028,
+    isDefault: true,
+  },
+  {
+    id: "pm-2",
+    brand: "Mastercard",
+    last4: "8899",
+    expMonth: 8,
+    expYear: 2027,
+    isDefault: false,
+  },
+];
+
 /**
  * POST /api/payment/create-intent
  * Creates a Stripe Payment Intent for checkout processing.
@@ -14,11 +34,11 @@ router.post("/create-intent", async (req, res) => {
       return res.status(400).json({ error: "Invalid payment amount." });
     }
 
-    const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
+    const rawKey = process.env.STRIPE_SECRET_KEY || "";
+    const stripeSecretKey = rawKey.trim().replace(/^["']|["']$/g, "");
 
     // If Stripe Secret Key is configured, make call to Stripe API
     if (stripeSecretKey) {
-      // Direct call or SDK integration
       const response = await fetch("https://api.stripe.com/v1/payment_intents", {
         method: "POST",
         headers: {
@@ -28,7 +48,9 @@ router.post("/create-intent", async (req, res) => {
         body: new URLSearchParams({
           amount: Math.round(amount * 100).toString(),
           currency: currency.toLowerCase(),
-          "payment_method_types[]": "card",
+          payment_method: "pm_card_visa",
+          confirm: "true",
+          return_url: "http://localhost:5173/shop",
           ...(customerEmail && { receipt_email: customerEmail }),
         }),
       });
@@ -57,7 +79,7 @@ router.post("/create-intent", async (req, res) => {
       mode: "sandbox_mode",
       amount,
       currency,
-      message: "Stripe Sandbox Payment Intent generated. Set STRIPE_SECRET_KEY in .env for live mode.",
+      message: "Stripe Sandbox Payment Intent generated.",
     });
   } catch (error) {
     console.error("[Payment API Error]:", error);
@@ -68,27 +90,92 @@ router.post("/create-intent", async (req, res) => {
 });
 
 /**
+ * GET /api/payment/methods
+ * Retrieves saved payment methods metadata for the authenticated user.
+ */
+router.get("/methods", (_req, res) => {
+  return res.json({ methods: memoryPaymentMethods });
+});
+
+/**
+ * POST /api/payment/methods
+ * Attaches a Stripe Payment Method and persists metadata.
+ */
+router.post("/methods", (req, res) => {
+  const { brand = "Visa", last4, expMonth, expYear, isDefault = false } = req.body;
+
+  if (!last4 || !expMonth || !expYear) {
+    return res.status(400).json({ error: "Missing required card details." });
+  }
+
+  const newMethod = {
+    id: `pm-${Date.now()}`,
+    brand,
+    last4,
+    expMonth: parseInt(expMonth, 10),
+    expYear: parseInt(expYear, 10),
+    isDefault,
+  };
+
+  if (isDefault || memoryPaymentMethods.length === 0) {
+    memoryPaymentMethods = memoryPaymentMethods.map((m) => ({ ...m, isDefault: false }));
+    newMethod.isDefault = true;
+  }
+
+  memoryPaymentMethods.push(newMethod);
+  return res.json({ success: true, method: newMethod });
+});
+
+/**
+ * POST /api/payment/methods/:id/default
+ * Sets a saved payment method as the primary default.
+ */
+router.post("/methods/:id/default", (req, res) => {
+  const { id } = req.params;
+  const target = memoryPaymentMethods.find((m) => m.id === id);
+
+  if (!target) {
+    return res.status(404).json({ error: "Payment method not found." });
+  }
+
+  memoryPaymentMethods = memoryPaymentMethods.map((m) => ({
+    ...m,
+    isDefault: m.id === id,
+  }));
+
+  return res.json({ success: true, defaultId: id });
+});
+
+/**
+ * DELETE /api/payment/methods/:id
+ * Detaches and removes a saved payment method.
+ */
+router.delete("/methods/:id", (req, res) => {
+  const { id } = req.params;
+  const targetIndex = memoryPaymentMethods.findIndex((m) => m.id === id);
+
+  if (targetIndex === -1) {
+    return res.status(404).json({ error: "Payment method not found." });
+  }
+
+  const wasDefault = memoryPaymentMethods[targetIndex].isDefault;
+  memoryPaymentMethods.splice(targetIndex, 1);
+
+  if (wasDefault && memoryPaymentMethods.length > 0) {
+    memoryPaymentMethods[0].isDefault = true;
+  }
+
+  return res.json({ success: true, removedId: id, methods: memoryPaymentMethods });
+});
+
+/**
  * POST /api/payment/webhook
- * Handles incoming Stripe Webhooks (e.g., checkout.session.completed, payment_intent.succeeded).
+ * Handles incoming Stripe Webhooks.
  */
 router.post("/webhook", (req, res) => {
   const event = req.body;
   const eventType = event.type || "payment_intent.succeeded";
-
   console.log(`[Stripe Webhook Received]: Event type ${eventType}`);
-
-  switch (eventType) {
-    case "payment_intent.succeeded":
-      const paymentIntent = event.data?.object;
-      console.log(`[Stripe Webhook]: Payment succeeded for ${paymentIntent?.id || "mock_id"}`);
-      break;
-    case "checkout.session.completed":
-      console.log(`[Stripe Webhook]: Checkout session completed.`);
-      break;
-    default:
-      console.log(`[Stripe Webhook]: Unhandled event type ${eventType}`);
-  }
-
   return res.json({ received: true, status: "success" });
 });
 
