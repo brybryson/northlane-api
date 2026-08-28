@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { sendOrderConfirmationEmail, OrderEmailPayload } from "../integrations/email-service.js";
 
 const router = Router();
 
@@ -102,4 +103,24 @@ router.post("/trigger", async (req, res) => {
   }
 });
 
+/**
+ * POST /api/automation/send-order-email
+ * Dispatches luxury Copenhagen HTML receipt to customer email from NorthlaneStudioPH@gmail.com
+ */
+router.post("/send-order-email", async (req, res) => {
+  try {
+    const payload = req.body as OrderEmailPayload;
+    if (!payload.orderId || !payload.customerEmail) {
+      return res.status(400).json({ error: "Missing required orderId or customerEmail field." });
+    }
+
+    const result = await sendOrderConfirmationEmail(payload);
+    return res.json(result);
+  } catch (err: any) {
+    console.error("[Order Email Route Error]:", err);
+    return res.status(500).json({ error: "Failed to dispatch confirmation email." });
+  }
+});
+
 export default router;
+
